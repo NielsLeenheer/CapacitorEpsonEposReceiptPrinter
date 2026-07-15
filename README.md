@@ -2,7 +2,7 @@
 
 This is a Capacitor plugin for **Epson** receipt printers (TM-m30 family, Mobilink P20II/P80II, and the wider TM line), via the Epson **ePOS2** SDK. It is the **Epson twin of [`CapacitorStarIOReceiptPrinter`](https://github.com/NielsLeenheer/CapacitorStarIOReceiptPrinter)** — the same JS surface, the same single-connection native contract, the same raw-bytes transport — minus the scanner (Epson TM printers have no mPOP-style input device). Both iOS and Android are targeted; the native plugins are one-to-one twins sharing one JS class and event contract.
 
-> **Status**: **E0** — repo scaffold + vendored SDK. The JS library, build config, podspec and Android gradle are in place and the SDK binaries are committed; the native **Swift** (E1) and **Kotlin** (B1) plugin sources land in the following steps. Run `npm install && npm run build` to produce the `dist/` bundles.
+> **Status**: **E1** — native **iOS plugin (Objective-C)** landed, plus the app-side Capacitor wiring. The JS library, build config, podspec and Android gradle are in place and the SDK binaries are committed; the **Kotlin** (B1) plugin sources land in a following step. Run `npm install && npm run build` to produce the `dist/` bundles.
 
 <br>
 
@@ -105,7 +105,9 @@ The 2023-revision EULA (§1) expressly grants the right to create "Derivative So
 
 ## iOS notes (E1)
 
-The Swift plugin lands in E1. The podspec already vendors the static xcframework, links `ExternalAccessory` + `CoreBluetooth`, ships the privacy manifest, and targets **iOS 15.0** (ePOS2's floor — already the app's floor via the Star work, so no deployment-target change). Classic-BT Epson printers are **MFi accessories**: the app's `Info.plist` gains `com.epson.escpos` in `UISupportedExternalAccessoryProtocols`, and an Epson MFi app registration (Application Information Sheet → PPID) is required before App Store submission (development on registered test devices proceeds meanwhile). LAN-only and BLE are exempt from MFi.
+The iOS plugin is **Objective-C** (`ios/Plugin/EpsonEposReceiptPrinterPlugin.{h,m}`), a deliberate deviation from the Star twin's Swift. **Why ObjC:** the ePOS2 SDK is an Objective-C library shipped as a bare-header **static** xcframework (`libepos2.xcframework/.../Headers/ePOS2.h` — a plain header, no `module.modulemap`). Objective-C `#import "ePOS2.h"` consumes those headers directly and avoids the Swift module-map / bridging machinery a vendored static xcframework would otherwise force. The plugin logic (`EpsonEposReceiptPrinterPlugin.m`, one held `Epos2Printer`, discovery via `Epos2Discovery` + `Epos2FilterOption`, `addCommand`→`sendData` raw print, `getStatus` mapping, connection-drop → `disconnected`) is one `@implementation`; the Capacitor `CAP_PLUGIN(…)` registration lives in a **separate** translation unit (`EpsonEposReceiptPrinterPluginRegistration.m`) because the macro re-declares the class as `: NSObject`, which cannot coexist in the same file as the real `: CAPPlugin` interface — this is the same split the stock Capacitor ObjC plugins use.
+
+The podspec vendors the static xcframework, links `ExternalAccessory` + `CoreBluetooth`, ships the privacy manifest, and targets **iOS 15.0** (ePOS2's floor — already the app's floor via the Star work, so no deployment-target change). No extra `libz`/OpenSSL linkage is needed: the static `libepos2.a` **bundles its own zlib and OpenSSL** objects (adding the system copies would duplicate-symbol). Classic-BT Epson printers are **MFi accessories**: the app's `Info.plist` gains `com.epson.escpos` in `UISupportedExternalAccessoryProtocols`, and an Epson MFi app registration (Application Information Sheet → PPID) is required before App Store submission (development on registered test devices proceeds meanwhile). LAN-only and BLE are exempt from MFi.
 
 ## Android notes (B1)
 

@@ -1,0 +1,21 @@
+# Node
+/node_modules
+
+# Android build artifacts
+android/build
+/android/.gradle
+*.iml
+
+# iOS / CocoaPods
+ios/Pods
+ios/build
+DerivedData
+
+# Epson ePOS2 SDK download ZIPs — the EXTRACTED binaries are committed
+# (D-P8: vendored at ios/Frameworks + android/libs + android/src/main/jniLibs),
+# but the multi-tens-of-MB source ZIPs themselves stay out of git. Refresh the
+# vendored binaries from a new ZIP with scripts/update-epson-sdk.sh.
+*.zip
+
+# Misc
+.DS_Store

@@ -1,0 +1,77 @@
+ext {
+    junitVersion = project.hasProperty('junitVersion') ? rootProject.ext.junitVersion : '4.13.2'
+    androidxAppCompatVersion = project.hasProperty('androidxAppCompatVersion') ? rootProject.ext.androidxAppCompatVersion : '1.6.1'
+    androidxJunitVersion = project.hasProperty('androidxJunitVersion') ? rootProject.ext.androidxJunitVersion : '1.1.5'
+    androidxEspressoCoreVersion = project.hasProperty('androidxEspressoCoreVersion') ? rootProject.ext.androidxEspressoCoreVersion : '3.5.1'
+}
+
+buildscript {
+    // Kotlin twin of the iOS plugin (B1 writes the sources). The kotlin-gradle-plugin
+    // classpath lives in THIS module's own buildscript (not the consumer's root)
+    // so the plugin stays self-contained: it builds in the Salonhub app's
+    // capacitor/android tree — which carries no Kotlin classpath — untouched.
+    // (Mirrors the Star plugin gradle; the ePOS2 SDK itself is a plain Java jar.)
+    ext.kotlin_version = '1.9.24'
+    repositories {
+        google()
+        mavenCentral()
+    }
+    dependencies {
+        classpath 'com.android.tools.build:gradle:8.2.1'
+        classpath "org.jetbrains.kotlin:kotlin-gradle-plugin:$kotlin_version"
+    }
+}
+
+apply plugin: 'com.android.library'
+apply plugin: 'kotlin-android'
+
+android {
+    namespace "nl.salonhub.epson"
+    compileSdk project.hasProperty('compileSdkVersion') ? rootProject.ext.compileSdkVersion : 34
+    defaultConfig {
+        // The ePOS2 SDK is a plain jar + per-ABI .so (NOT an .aar), so it carries
+        // no manifest and imposes no minSdk floor of its own — there is no
+        // tools:overrideLibrary dance (unlike the Star/stario10 AAR). minSdk 22
+        // matches the Star plugin gradle and the app.
+        minSdkVersion project.hasProperty('minSdkVersion') ? rootProject.ext.minSdkVersion : 22
+        targetSdkVersion project.hasProperty('targetSdkVersion') ? rootProject.ext.targetSdkVersion : 34
+        versionCode 1
+        versionName "1.0"
+        testInstrumentationRunner "androidx.test.runner.AndroidJUnitRunner"
+    }
+    buildTypes {
+        release {
+            minifyEnabled false
+            proguardFiles getDefaultProguardFile('proguard-android.txt'), 'proguard-rules.pro'
+        }
+    }
+    lintOptions {
+        abortOnError false
+    }
+    compileOptions {
+        sourceCompatibility JavaVersion.VERSION_17
+        targetCompatibility JavaVersion.VERSION_17
+    }
+    kotlinOptions {
+        jvmTarget = '17'
+    }
+}
+
+repositories {
+    google()
+    mavenCentral()
+}
+
+
+dependencies {
+    // Epson ePOS2 SDK — vendored jar (D-P8, committed at android/libs/ePOS2.jar).
+    // No Maven coordinate (Epson publishes none; the portal closed 2024). The
+    // native libepos2.so per ABI is picked up automatically from
+    // src/main/jniLibs/<abi>/ — no explicit jniLibs config needed.
+    implementation files('libs/ePOS2.jar')
+    implementation project(':capacitor-android')
+    implementation "androidx.appcompat:appcompat:$androidxAppCompatVersion"
+    testImplementation "junit:junit:$junitVersion"
+    androidTestImplementation "androidx.test.ext:junit:$androidxJunitVersion"
+    androidTestImplementation "androidx.test.espresso:espresso-core:$androidxEspressoCoreVersion"
+}

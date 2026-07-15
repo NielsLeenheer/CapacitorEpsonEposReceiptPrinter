@@ -1,0 +1,37 @@
+<?xml version="1.0" encoding="utf-8"?>
+<manifest xmlns:android="http://schemas.android.com/apk/res/android"
+    xmlns:tools="http://schemas.android.com/tools">
+
+    <!--
+        The ePOS2 SDK is a plain jar + per-ABI .so (NOT an .aar), so — unlike the
+        Star/stario10 AAR — it declares NO permissions of its own. This plugin
+        therefore declares the FULL Bluetooth permission set itself.
+
+        Legacy (Android <= 11 / API 30): the old BLUETOOTH and BLUETOOTH_ADMIN
+        grants are install-time; capped at maxSdkVersion 30 because API 31+ splits
+        Bluetooth into the runtime "Nearby devices" permissions below.
+    -->
+    <uses-permission android:name="android.permission.BLUETOOTH"
+        android:maxSdkVersion="30" />
+    <uses-permission android:name="android.permission.BLUETOOTH_ADMIN"
+        android:maxSdkVersion="30" />
+
+    <!--
+        Android 12+ (API 31) runtime "Nearby devices" permissions. BLUETOOTH_SCAN
+        drives classic/BLE discovery — neverForLocation because Epson discovery
+        never derives physical location. BLUETOOTH_CONNECT is needed to open the
+        connection. NOTE: these are RUNTIME permissions — declaring them here only
+        makes them REQUESTABLE; the app must request them before discover()/connect()
+        (the JS class wraps this in ensurePermissions(), backed by the plugin's
+        `bluetooth` @CapacitorPlugin alias).
+    -->
+    <uses-permission android:name="android.permission.BLUETOOTH_SCAN"
+        android:usesPermissionFlags="neverForLocation"
+        tools:targetApi="s" />
+    <uses-permission android:name="android.permission.BLUETOOTH_CONNECT"
+        tools:targetApi="s" />
+
+    <!-- LAN transport (the ePOS2 network leg — plugin-supported, D-P3). -->
+    <uses-permission android:name="android.permission.INTERNET" />
+
+</manifest>

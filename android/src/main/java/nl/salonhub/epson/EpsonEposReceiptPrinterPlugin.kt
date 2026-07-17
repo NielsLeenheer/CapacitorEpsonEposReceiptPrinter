@@ -1,6 +1,7 @@
 package nl.salonhub.epson
 
 import android.util.Base64
+import android.util.Log
 import com.epson.epos2.ConnectionListener
 import com.epson.epos2.Epos2Exception
 import com.epson.epos2.discovery.DeviceInfo
@@ -70,6 +71,11 @@ import java.util.concurrent.TimeUnit
     ]
 )
 class EpsonEposReceiptPrinterPlugin : Plugin() {
+
+    // Hardware bring-up logging. Filter logcat for this tag; the iOS twin logs
+    // the same events under `[SH-POS][Epson/ios]`. Remove once discovery/connect
+    // is proven on device.
+    private val logTag = "SH-POS/Epson"
 
     // The single held connection (D2) and what it is bound to.
     private var printer: Printer? = null
@@ -142,6 +148,8 @@ class EpsonEposReceiptPrinterPlugin : Plugin() {
             timeout = 5000
         }
 
+        Log.d(logTag, "discover() requested=$requested timeout=${timeout}ms")
+
         // Map to port types, dropping BLE/unknown, dedupe preserving request order.
         val portTypes = LinkedHashSet<Int>()
         for (name in requested) {
@@ -152,6 +160,7 @@ class EpsonEposReceiptPrinterPlugin : Plugin() {
         }
 
         if (portTypes.isEmpty()) {
+            Log.d(logTag, "discover() REJECT no_valid_interfaces (BLE is unsupported on Android ePOS2 and is dropped)")
             call.reject("no_valid_interfaces")
             return
         }
@@ -174,6 +183,8 @@ class EpsonEposReceiptPrinterPlugin : Plugin() {
         if (perPass < 500) {
             perPass = 500   // floor so a slow inquiry still has a chance per pass
         }
+
+        Log.d(logTag, "discover() plan: ${passes.size} pass(es)=$passes, ${perPass}ms each")
 
         synchronized(discoveryLock) {
             discoveryCall = call
@@ -218,8 +229,10 @@ class EpsonEposReceiptPrinterPlugin : Plugin() {
         }
         try {
             Discovery.start(context, filter, discoveryEvents)
+            Log.d(logTag, "discover() pass ${index + 1}/${passes.size} started: portType=$portType")
         } catch (e: Exception) {
             // Errors (e.g. already-running) fall through; the pass still elapses.
+            Log.d(logTag, "discover() pass ${index + 1}/${passes.size} start threw: ${e.message}")
         }
 
         synchronized(discoveryLock) {
@@ -262,6 +275,7 @@ class EpsonEposReceiptPrinterPlugin : Plugin() {
             discoveryIndex = 0
         }
 
+        Log.d(logTag, "discover() finished — resolving ${devices.length()} device(s) to JS: $devices")
         call?.resolve(JSObject().put("devices", devices))
     }
 
@@ -280,14 +294,18 @@ class EpsonEposReceiptPrinterPlugin : Plugin() {
         val interfaceName = call.getString("interface")
         val model = call.getString("model")
 
+        Log.d(logTag, "connect() interface=$interfaceName identifier=$identifier model=$model")
+
         if (identifier.isNullOrEmpty()) {
             // ePOS2 has no FIRST_FOUND-device concept — a concrete target is required.
+            Log.d(logTag, "connect() REJECT no_target (empty identifier)")
             call.reject("no_target")
             return
         }
 
         // Same-target no-op.
         if (printer != null && boundTarget == identifier) {
+            Log.d(logTag, "connect() no-op — already bound to this target")
             call.resolve()
             return
         }
@@ -321,6 +339,7 @@ class EpsonEposReceiptPrinterPlugin : Plugin() {
                     newPrinter.setConnectionEventListener(null)
                 } catch (ignored: Exception) {
                 }
+                Log.d(logTag, "connect() FAILED — ePOS2 connect returned ${errorName(e.errorStatus)}")
                 call.reject(errorName(e.errorStatus))
                 return@execute
             }
@@ -333,6 +352,7 @@ class EpsonEposReceiptPrinterPlugin : Plugin() {
             } else {
                 interfaceFromTarget(identifier)
             }
+            Log.d(logTag, "connect() ok — bound to $identifier (series=$series)")
             notifyListeners("connected", JSObject())
             call.resolve()
         }
@@ -527,6 +547,7 @@ class EpsonEposReceiptPrinterPlugin : Plugin() {
             if (target.isNullOrEmpty()) {
                 return
             }
+            Log.d(logTag, "onDiscovery: target=$target deviceName=${info.deviceName}")
             synchronized(discoveryLock) {
                 discoveredDevices?.put(target, info)   // dedupe by target across passes
             }

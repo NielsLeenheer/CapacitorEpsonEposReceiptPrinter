@@ -3,6 +3,13 @@
 #import "ePOS2.h"
 
 /*
+    Hardware bring-up logging. Every line is tagged `[SH-POS][Epson/ios]` so it
+    can be filtered in Console.app / Xcode. Remove once ePOS2 discovery/connect
+    is proven on device.
+*/
+#define SHEpsonLog(fmt, ...) NSLog((@"[SH-POS][Epson/ios] " fmt), ##__VA_ARGS__)
+
+/*
     ePOS2 raw-mode transport (analysis plan D-P2). Receipts are rendered to
     ESC/POS app-side by ReceiptPrinterEncoder; this plugin only ships those
     bytes through the SDK's addCommand -> sendData raw pass-through. It never
@@ -46,6 +53,7 @@
 /* The ePOS2 SDK is compiled into every iOS build, so the native plugin is
    always present. Whether any Epson device is reachable is discover()'s job. */
 - (void)isAvailable:(CAPPluginCall *)call {
+    SHEpsonLog(@"isAvailable() → true");
     [call resolve:@{ @"available": @YES }];
 }
 
@@ -85,6 +93,8 @@
         timeout = 5000;
     }
 
+    SHEpsonLog(@"discover() requested interfaces=%@ timeout=%ldms", names, timeout);
+
     NSMutableArray<NSNumber *> *portTypes = [NSMutableArray array];
     NSMutableSet<NSNumber *> *requested = [NSMutableSet set];
     for (id name in names) {
@@ -103,6 +113,7 @@
     }
 
     if (portTypes.count == 0) {
+        SHEpsonLog(@"discover() REJECT no_valid_interfaces (none of %@ mapped to an ePOS2 port type)", names);
         [call reject:@"no_valid_interfaces" :nil :nil :nil];
         return;
     }
@@ -122,6 +133,11 @@
     if (perPass < 500) {
         perPass = 500;   // floor so slow BLE inquiry still has a chance per pass
     }
+
+    BOOL collapsedToAll = [requested isEqualToSet:allSupported];
+    SHEpsonLog(@"discover() plan: %lu pass(es) (%@), %ldms each",
+               (unsigned long)passes.count,
+               collapsedToAll ? @"PORTTYPE_ALL" : @"per-interface", perPass);
 
     @synchronized (self) {
         self.discoveryCall = call;
@@ -161,7 +177,10 @@
     [filter setDeviceType:EPOS2_TYPE_PRINTER];   // this is a receipt-printer plugin (D-P6)
 
     [Epos2Discovery stop];   // ensure no prior run is still active
-    (void)[Epos2Discovery start:filter delegate:self];   // errors (e.g. already-running) fall through; the pass still elapses
+    int startResult = [Epos2Discovery start:filter delegate:self];   // errors (e.g. already-running) fall through; the pass still elapses
+    SHEpsonLog(@"discover() pass %lu/%lu started: portType=%d start=%@",
+               (unsigned long)(index + 1), (unsigned long)passes.count, portType,
+               [EpsonEposReceiptPrinterPlugin errorName:startResult]);
 
     @synchronized (self) {
         self.discoveryIndex = index + 1;
@@ -195,6 +214,9 @@
         self.discoveryIndex = 0;
     }
 
+    SHEpsonLog(@"discover() finished — resolving %lu device(s) to JS: %@",
+               (unsigned long)devices.count, devices);
+
     if (call != nil) {
         [call resolve:@{ @"devices": devices }];
     }
@@ -210,6 +232,9 @@
     if (target.length == 0) {
         return;
     }
+    SHEpsonLog(@"onDiscovery: target=%@ deviceName=%@ ip=%@ mac=%@ bd=%@",
+               target, deviceInfo.deviceName, deviceInfo.ipAddress,
+               deviceInfo.macAddress, deviceInfo.bdAddress);
     @synchronized (self) {
         if (self.discoveredDevices == nil) {
             return;
@@ -232,14 +257,18 @@
     NSString *interfaceName = [call getString:@"interface" defaultValue:nil];
     NSString *model = [call getString:@"model" defaultValue:nil];
 
+    SHEpsonLog(@"connect() interface=%@ identifier=%@ model=%@", interfaceName, identifier, model);
+
     if (identifier.length == 0) {
         // ePOS2 has no FIRST_FOUND-device concept — a concrete target is required.
+        SHEpsonLog(@"connect() REJECT no_target (empty identifier)");
         [call reject:@"no_target" :nil :nil :nil];
         return;
     }
 
     // Same-target no-op.
     if (self.printer != nil && [self.boundTarget isEqualToString:identifier]) {
+        SHEpsonLog(@"connect() no-op — already bound to this target");
         [call resolve];
         return;
     }
@@ -270,11 +299,13 @@
         self.boundInterface = interfaceName.length > 0
             ? interfaceName
             : [EpsonEposReceiptPrinterPlugin interfaceFromTarget:identifier];
+        SHEpsonLog(@"connect() ok — bound to %@ (series=%d)", identifier, series);
         [self notifyListeners:@"connected" data:@{}];
         [call resolve];
     } else {
         [printer setReceiveEventDelegate:nil];
         [printer setConnectionEventDelegate:nil];
+        SHEpsonLog(@"connect() FAILED — ePOS2 connect returned %@", [EpsonEposReceiptPrinterPlugin errorName:result]);
         [call reject:[EpsonEposReceiptPrinterPlugin errorName:result] :nil :nil :nil];
     }
 }
@@ -407,6 +438,7 @@
 }
 
 - (void)handleLostConnection {
+    SHEpsonLog(@"native disconnect detected (ePOS2 EVENT_DISCONNECT)");
     Epos2Printer *printer = self.printer;
     if (printer == nil) {
         return;

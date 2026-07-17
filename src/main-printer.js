@@ -1,5 +1,27 @@
 import EventEmitter from "./event-emitter.js";
 
+/*
+	Hardware bring-up logging. Every line is tagged `[SH-POS][Epson/js]` so it can
+	be filtered in the device console. Capacitor forwards webview console.* to the
+	native log (Xcode / Console.app on iOS, logcat on Android), and Safari Web
+	Inspector shows it directly. Remove once ePOS2 discovery/connect is proven on
+	device.
+*/
+function log(...args) {
+	try {
+		console.log('[SH-POS][Epson/js]', ...args);
+	} catch (e) {}
+}
+
+/* True only when the native plugin is actually registered under the Capacitor
+   runtime; safe to call on web (no throw). */
+function pluginPresence() {
+	let cap = typeof window !== 'undefined' ? window.Capacitor : undefined;
+	let platform = cap && typeof cap.getPlatform === 'function' ? cap.getPlatform() : 'web';
+	let registered = !!(cap && cap.Plugins && cap.Plugins.EpsonEposReceiptPrinter);
+	return { platform, registered };
+}
+
 class ReceiptPrinterDriver {}
 
 /*
@@ -37,7 +59,16 @@ class CapacitorEpsonEposReceiptPrinter extends ReceiptPrinterDriver {
 	/* Is an ePOS2-capable native plugin present on this device? */
 
 	async isAvailable() {
+		let { platform, registered } = pluginPresence();
+		log('isAvailable() called; platform =', platform, '; plugin registered =', registered);
+
+		if (!registered) {
+			log('isAvailable() → false (native plugin not registered on this runtime)');
+			return false;
+		}
+
 		let result = await this.#plugin.isAvailable();
+		log('isAvailable() → native reports available =', result && result.available);
 
 		return result.available === true;
 	}
@@ -109,9 +140,25 @@ class CapacitorEpsonEposReceiptPrinter extends ReceiptPrinterDriver {
 			timeout: 5000
 		}, options || {});
 
-		let result = await this.#plugin.discover(options);
+		let { platform, registered } = pluginPresence();
+		log('discover() called; platform =', platform, '; plugin registered =', registered, '; options =', JSON.stringify(options));
 
-		return result.devices || [];
+		if (!registered) {
+			log('discover() ABORT — window.Capacitor.Plugins.EpsonEposReceiptPrinter is undefined; returning []');
+			return [];
+		}
+
+		let started = Date.now();
+
+		try {
+			let result = await this.#plugin.discover(options);
+			let devices = (result && result.devices) || [];
+			log('discover() resolved after', (Date.now() - started) + 'ms;', devices.length, 'device(s):', JSON.stringify(devices));
+			return devices;
+		} catch (e) {
+			log('discover() REJECTED after', (Date.now() - started) + 'ms:', (e && (e.message || e.errorMessage)) || e);
+			throw e;
+		}
 	}
 
 	/*
@@ -129,13 +176,24 @@ class CapacitorEpsonEposReceiptPrinter extends ReceiptPrinterDriver {
 
 	async connect(device) {
 		if (this.#connected) {
+			log('connect() no-op — already connected (JS guard)');
 			return;
 		}
 
-		await this.#plugin.connect(device ? {
-			interface: device.interface,
-			identifier: device.identifier
-		} : {});
+		log('connect() called; device =', JSON.stringify(device || null));
+
+		let started = Date.now();
+
+		try {
+			await this.#plugin.connect(device ? {
+				interface: device.interface,
+				identifier: device.identifier
+			} : {});
+			log('connect() native connect resolved after', (Date.now() - started) + 'ms');
+		} catch (e) {
+			log('connect() native connect REJECTED after', (Date.now() - started) + 'ms:', (e && (e.message || e.errorMessage)) || e);
+			throw e;
+		}
 
 		/* Reflect native-initiated drops (printer power-cycle, background/resume
 		   — R8: EA sessions drop on background) so the shared connected state
@@ -172,6 +230,8 @@ class CapacitorEpsonEposReceiptPrinter extends ReceiptPrinterDriver {
 	}
 
 	#handleDisconnected() {
+		log('native "disconnected" event received');
+
 		if (!this.#connected) {
 			return;
 		}

@@ -4,10 +4,13 @@
 
 /*
     Hardware bring-up logging. Every line is tagged `[SH-POS][Epson/ios]` so it
-    can be filtered in Console.app / Xcode. Remove once ePOS2 discovery/connect
-    is proven on device.
+    can be filtered in Console.app / Xcode. os_log with %{public}@ (not NSLog):
+    NSLog's dynamic arguments are redacted to <private> in Console.app's stream,
+    which hides exactly the device names/targets this logging exists to show.
+    Remove once ePOS2 discovery/connect is proven on device.
 */
-#define SHEpsonLog(fmt, ...) NSLog((@"[SH-POS][Epson/ios] " fmt), ##__VA_ARGS__)
+#import <os/log.h>
+#define SHEpsonLog(fmt, ...) os_log(OS_LOG_DEFAULT, "[SH-POS][Epson/ios] %{public}@", [NSString stringWithFormat:(fmt), ##__VA_ARGS__])
 
 /*
     ePOS2 raw-mode transport (analysis plan D-P2). Receipts are rendered to

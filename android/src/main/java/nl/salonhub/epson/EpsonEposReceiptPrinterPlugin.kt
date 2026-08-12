@@ -1,5 +1,7 @@
 package nl.salonhub.epson
 
+import android.content.Context
+import android.hardware.usb.UsbManager
 import android.util.Base64
 import android.util.Log
 import com.epson.epos2.ConnectionListener
@@ -266,7 +268,7 @@ class EpsonEposReceiptPrinterPlugin : Plugin() {
                     JSObject()
                         .put("interface", interfaceFromTarget(target))
                         .put("identifier", target)
-                        .put("model", info.deviceName ?: "")
+                        .put("model", usbProductName(target) ?: info.deviceName ?: "")
                 )
             }
             discoveryCall = null
@@ -277,6 +279,33 @@ class EpsonEposReceiptPrinterPlugin : Plugin() {
 
         Log.d(logTag, "discover() finished — resolving ${devices.length()} device(s) to JS: $devices")
         call?.resolve(JSObject().put("devices", devices))
+    }
+
+    /*
+        ePOS2 USB discovery reports the generic deviceName "TM Printer"; the USB
+        descriptor's product string carries the REAL model (e.g. "TM-P20II"),
+        which drives both the app's 'Automatisch' encoder-preset mapping and the
+        printer-series choice at connect. The ePOS2 target "USB:/dev/bus/usb/…"
+        suffix is exactly UsbDevice.deviceName, so the lookup is a direct match.
+        productName needs no USB permission (unlike the serial number).
+    */
+    private fun usbProductName(target: String): String? {
+        if (!target.startsWith("USB:")) {
+            return null
+        }
+        return try {
+            val usbManager = context.getSystemService(Context.USB_SERVICE) as UsbManager
+            val product = usbManager.deviceList.values
+                .firstOrNull { it.deviceName == target.removePrefix("USB:") }
+                ?.productName
+            if (product != null) {
+                Log.d(logTag, "usbProductName: $target → $product")
+            }
+            product
+        } catch (e: Exception) {
+            Log.d(logTag, "usbProductName lookup failed for $target: ${e.message}")
+            null
+        }
     }
 
     // MARK: - connect
@@ -311,6 +340,15 @@ class EpsonEposReceiptPrinterPlugin : Plugin() {
         }
 
         executor.execute {
+            // A still-running discovery starves the open on the shared radio —
+            // finish it first (stops the SDK discovery and resolves a pending
+            // discover call with whatever it found so far). No-op when idle.
+            val discoveryActive = synchronized(discoveryLock) { discoveryCall != null }
+            if (discoveryActive) {
+                Log.d(logTag, "connect() finishing in-flight discovery before open")
+                finishDiscovery()
+            }
+
             // Different target: drop the current connection first.
             if (printer != null) {
                 teardownPrinter()
@@ -434,6 +472,8 @@ class EpsonEposReceiptPrinterPlugin : Plugin() {
             return
         }
 
+        Log.d(logTag, "print() ${bytes.size} bytes → addCommand/sendData")
+
         executor.execute {
             // add -> send -> clear -> resolve/reject (iOS parity: the command
             // buffer is ALWAYS cleared after, each job self-contained).
@@ -450,8 +490,10 @@ class EpsonEposReceiptPrinterPlugin : Plugin() {
             }
 
             if (failure == null) {
+                Log.d(logTag, "print() sendData ok (${bytes.size} bytes)")
                 call.resolve()
             } else {
+                Log.d(logTag, "print() FAILED: $failure")
                 call.reject(failure)
             }
         }
@@ -519,7 +561,14 @@ class EpsonEposReceiptPrinterPlugin : Plugin() {
         ) {
             // Print jobs resolve on the sendData return; this only records the
             // last asynchronous result. Deliberately resolves/rejects nothing.
+            // The code is the printer's own verdict on the job (CODE_SUCCESS=0)
+            // and the only place a printer-side stall becomes visible — log it.
             lastReceiveCode = code
+            Log.d(
+                logTag,
+                "onPtrReceive: code=$code jobId=$printJobId" +
+                    " online=${status?.online} paper=${status?.paper} error=${status?.errorStatus}"
+            )
         }
     }
 

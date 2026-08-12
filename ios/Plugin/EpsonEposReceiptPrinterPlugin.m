@@ -238,11 +238,25 @@
     SHEpsonLog(@"onDiscovery: target=%@ deviceName=%@ ip=%@ mac=%@ bd=%@",
                target, deviceInfo.deviceName, deviceInfo.ipAddress,
                deviceInfo.macAddress, deviceInfo.bdAddress);
+    BOOL fresh = NO;
     @synchronized (self) {
         if (self.discoveredDevices == nil) {
             return;
         }
+        fresh = self.discoveredDevices[target] == nil;
         self.discoveredDevices[target] = deviceInfo;   // dedupe by target across passes
+    }
+
+    // Discovery runs its passes to the end, so a caller that waits for the
+    // resolve shows nothing for seconds; this lets the pairing list fill as
+    // printers answer. Only the first sighting of a target is announced — the
+    // passes see the same printer more than once.
+    if (fresh) {
+        [self notifyListeners:@"printerFound" data:@{
+            @"interface": [EpsonEposReceiptPrinterPlugin interfaceFromTarget:target],
+            @"identifier": target,
+            @"model": deviceInfo.deviceName ?: @""
+        }];
     }
 }
 

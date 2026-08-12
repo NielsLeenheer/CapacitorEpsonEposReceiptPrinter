@@ -597,8 +597,25 @@ class EpsonEposReceiptPrinterPlugin : Plugin() {
                 return
             }
             Log.d(logTag, "onDiscovery: target=$target deviceName=${info.deviceName}")
+
+            var fresh = false
             synchronized(discoveryLock) {
-                discoveredDevices?.put(target, info)   // dedupe by target across passes
+                // dedupe by target across passes
+                fresh = discoveredDevices?.put(target, info) == null && discoveredDevices != null
+            }
+
+            // Discovery runs its passes to the end, so a caller that waits for
+            // the resolve shows nothing for seconds; this lets the pairing list
+            // fill as printers answer. Only the first sighting of a target is
+            // announced — the passes see the same printer more than once.
+            if (fresh) {
+                notifyListeners(
+                    "printerFound",
+                    JSObject()
+                        .put("interface", interfaceFromTarget(target))
+                        .put("identifier", target)
+                        .put("model", usbProductName(target) ?: info.deviceName ?: "")
+                )
             }
         }
     }

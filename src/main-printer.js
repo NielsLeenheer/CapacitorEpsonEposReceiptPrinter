@@ -134,7 +134,7 @@ class CapacitorEpsonEposReceiptPrinter extends ReceiptPrinterDriver {
 		simply returns no devices there, it does not error.
 	*/
 
-	async discover(options) {
+	async discover(options, onFound) {
 		options = Object.assign({
 			interfaces: ['lan', 'bluetooth', 'bluetoothLE', 'usb'],
 			timeout: 5000
@@ -150,6 +150,19 @@ class CapacitorEpsonEposReceiptPrinter extends ReceiptPrinterDriver {
 
 		let started = Date.now();
 
+		/* The native side runs discovery for its whole window and only then
+		   resolves. When the caller wants them as they arrive — a pairing list
+		   that fills instead of sitting empty — it passes onFound and gets each
+		   printer the moment the SDK reports it; the resolve still carries the
+		   complete set. */
+
+		let listener = onFound
+			? await this.#plugin.addListener('printerFound', (device) => {
+				log('discover() printerFound:', JSON.stringify(device));
+				onFound(device);
+			})
+			: null;
+
 		try {
 			let result = await this.#plugin.discover(options);
 			let devices = (result && result.devices) || [];
@@ -158,6 +171,10 @@ class CapacitorEpsonEposReceiptPrinter extends ReceiptPrinterDriver {
 		} catch (e) {
 			log('discover() REJECTED after', (Date.now() - started) + 'ms:', (e && (e.message || e.errorMessage)) || e);
 			throw e;
+		} finally {
+			if (listener) {
+				await listener.remove();
+			}
 		}
 	}
 

@@ -47,6 +47,13 @@
     "ios",
     "android",
     "PointOfSaleCapacitorEpsonEposReceiptPrinter.podspec",
-    "EPSON-EULA.en.txt"
-  ]
+    "EPSON-EULA.en.txt",
+    "!android/build",
+    "!android/.gradle",
+    "!ios/build",
+    "!ios/Pods"
+  ],
+  "publishConfig": {
+    "access": "public"
+  }
 }

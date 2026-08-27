@@ -1,23 +1,31 @@
 ext {
     junitVersion = project.hasProperty('junitVersion') ? rootProject.ext.junitVersion : '4.13.2'
-    androidxAppCompatVersion = project.hasProperty('androidxAppCompatVersion') ? rootProject.ext.androidxAppCompatVersion : '1.6.1'
-    androidxJunitVersion = project.hasProperty('androidxJunitVersion') ? rootProject.ext.androidxJunitVersion : '1.1.5'
-    androidxEspressoCoreVersion = project.hasProperty('androidxEspressoCoreVersion') ? rootProject.ext.androidxEspressoCoreVersion : '3.5.1'
+    androidxAppCompatVersion = project.hasProperty('androidxAppCompatVersion') ? rootProject.ext.androidxAppCompatVersion : '1.7.1'
+    androidxJunitVersion = project.hasProperty('androidxJunitVersion') ? rootProject.ext.androidxJunitVersion : '1.3.0'
+    androidxEspressoCoreVersion = project.hasProperty('androidxEspressoCoreVersion') ? rootProject.ext.androidxEspressoCoreVersion : '3.7.0'
 }
 
 buildscript {
-    // Kotlin twin of the iOS plugin (B1 writes the sources). The kotlin-gradle-plugin
-    // classpath lives in THIS module's own buildscript (not the consumer's root)
-    // so the plugin stays self-contained: it builds in the Salonhub app's
-    // capacitor/android tree — which carries no Kotlin classpath — untouched.
-    // (Mirrors the Star plugin gradle; the ePOS2 SDK itself is a plain Java jar.)
-    ext.kotlin_version = '1.9.24'
+    // The toolchain FOLLOWS the consuming app: every version below reads
+    // rootProject.ext when the app defines it (the Salonhub app does, in
+    // build/capacitor/android/variables.gradle) and falls back to the Capacitor 8
+    // baseline for a standalone build of this repo. Nothing here pins a version
+    // the app cannot move.
+    //
+    // The Kotlin classpath is here rather than in the consumer's root because this
+    // plugin is the Kotlin twin of the iOS one, and it has to build in app trees
+    // that carry no Kotlin classpath of their own. (The ePOS2 SDK itself is a
+    // plain Java jar.)
+    ext {
+        androidToolsBuildGradleVersion = rootProject.hasProperty('androidToolsBuildGradleVersion') ? rootProject.ext.androidToolsBuildGradleVersion : '8.13.0'
+        kotlin_version = rootProject.hasProperty('kotlin_version') ? rootProject.ext.kotlin_version : '2.2.20'
+    }
     repositories {
         google()
         mavenCentral()
     }
     dependencies {
-        classpath 'com.android.tools.build:gradle:8.2.1'
+        classpath "com.android.tools.build:gradle:$androidToolsBuildGradleVersion"
         classpath "org.jetbrains.kotlin:kotlin-gradle-plugin:$kotlin_version"
     }
 }
@@ -27,14 +35,14 @@ apply plugin: 'kotlin-android'
 
 android {
     namespace "nl.salonhub.epson"
-    compileSdk project.hasProperty('compileSdkVersion') ? rootProject.ext.compileSdkVersion : 34
+    compileSdk project.hasProperty('compileSdkVersion') ? rootProject.ext.compileSdkVersion : 36
     defaultConfig {
         // The ePOS2 SDK is a plain jar + per-ABI .so (NOT an .aar), so it carries
         // no manifest and imposes no minSdk floor of its own — there is no
-        // tools:overrideLibrary dance (unlike the Star/stario10 AAR). minSdk 22
-        // matches the Star plugin gradle and the app.
-        minSdkVersion project.hasProperty('minSdkVersion') ? rootProject.ext.minSdkVersion : 22
-        targetSdkVersion project.hasProperty('targetSdkVersion') ? rootProject.ext.targetSdkVersion : 34
+        // tools:overrideLibrary dance (unlike the Star/stario10 AAR). Whatever
+        // the consuming app sets is what this module builds against.
+        minSdkVersion project.hasProperty('minSdkVersion') ? rootProject.ext.minSdkVersion : 24
+        targetSdkVersion project.hasProperty('targetSdkVersion') ? rootProject.ext.targetSdkVersion : 36
         versionCode 1
         versionName "1.0"
         testInstrumentationRunner "androidx.test.runner.AndroidJUnitRunner"
@@ -45,15 +53,15 @@ android {
             proguardFiles getDefaultProguardFile('proguard-android.txt'), 'proguard-rules.pro'
         }
     }
-    lintOptions {
-        abortOnError false
+    lint {
+        abortOnError = false
     }
     compileOptions {
-        sourceCompatibility JavaVersion.VERSION_17
-        targetCompatibility JavaVersion.VERSION_17
+        sourceCompatibility rootProject.hasProperty('javaSourceCompatibility') ? rootProject.ext.javaSourceCompatibility : JavaVersion.VERSION_21
+        targetCompatibility rootProject.hasProperty('javaTargetCompatibility') ? rootProject.ext.javaTargetCompatibility : JavaVersion.VERSION_21
     }
     kotlinOptions {
-        jvmTarget = '17'
+        jvmTarget = rootProject.hasProperty('javaTargetCompatibility') ? rootProject.ext.javaTargetCompatibility.toString() : '21'
     }
 }
 

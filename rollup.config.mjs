@@ -11,7 +11,8 @@ export default [
 			name: 'CapacitorEpsonEposReceiptPrinter',
 			file: 'dist/capacitor-epson-epos-receipt-printer.umd.js',
 			sourcemap: true,
-			format: 'umd'
+			format: 'umd',
+			exports: 'named'
 		},
 		plugins: [
 			resolve(),

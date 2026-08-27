@@ -1,6 +1,6 @@
 {
   "name": "@point-of-sale/capacitor-epson-epos-receipt-printer",
-  "version": "0.0.1",
+  "version": "0.1.0",
   "type": "module",
   "description": "Capacitor plugin for Epson receipt printers via the ePOS2 SDK \u2014 a raw ESC/POS (addCommand/sendData) transport over LAN, Bluetooth (MFi/SPP), BLE and USB",
   "exports": {
@@ -42,6 +42,7 @@
     "rollup": "^3.20.7"
   },
   "scripts": {
+    "prepublishOnly": "rollup -c",
     "build": "rollup -c",
     "dev": "rollup -c -w"
   },
